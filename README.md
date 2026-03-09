@@ -60,3 +60,122 @@ flowchart TD
     D -->|Display| UI
 
     C -.->|Optional Anonymized Sync| Cloud[(Cloud Analytics<br/>BigQuery / Vertex AI)]
+```
+
+คำอธิบายแต่ละชั้น
+
+1. Layer 1 – Low‑Latency Data Ingestion
+   · โค้ดระดับ native (Go/C) ทำงานใน daemon อ่านค่ากระแสและประจุจาก sysfs โดยตรง
+   · ใช้ AlarmManager แบบ setExactAndAllowWhileIdle เพื่อปลุกเป็นช่วงสั้นๆ (micro‑batch) ขณะปิดหน้าจอ ประหยัดพลังงาน
+2. Layer 2 – AI Governance Enforcer
+   · ติดตาม wakelock และกระแสที่ผิดปกติด้วยโมเดล LightGBM ขนาดเล็ก
+   · ส่งการแจ้งเตือนทันทีเมื่อพบ anomaly หรือเมื่อแบตเตอรี่ถึงระดับชาร์จที่ตั้ง
+3. Layer 3 – Long‑Term Memory Pipeline
+   · ข้อมูลทั้งหมดถูกบีบอัดและเก็บในฐานข้อมูล local (SQLite + Room หรือ Realm)
+   · รองรับการส่งออกเป็น JSON และ optional sync ขึ้นคลาวด์แบบไม่ระบุตัวตน
+4. Layer 4 – LLM Diagnostic & UI
+   · On‑device LLM (ผ่าน ML Kit หรือ LLM Runtime) อ่านข้อมูลจากฐานและสรุปเป็นข้อความเข้าใจง่าย
+   · UI แสดงกราฟ สถิติ และคำแนะนำผ่าน notification
+
+---
+
+## 🗄️ โครงสร้างฐานข้อมูล (Database Schema)
+
+เราใช้ SQLite (ผ่าน Room) เป็นหลัก โดยมีตารางหลักดังนี้:
+
+### battery_snapshots
+
+| Column | Type | Description |
+| --- | --- | --- |
+| id | Long (PK) | auto increment |
+| timestamp | Long | เวลาที่บันทึก (Unix ms) |
+| level_percent | Int | เปอร์เซ็นต์แบตเตอรี่ |
+| voltage_mv | Int | แรงดัน (mV) |
+| current_ma | Int | กระแสขณะนั้น (mA) |
+| capacity_mah | Int | ความจุปัจจุบัน (mAh) |
+| temperature_c | Float | อุณหภูมิ (°C) |
+| screen_on | Boolean | หน้าจอเปิดหรือไม่ |
+
+### charge_cycles
+
+| Column | Type | Description |
+| --- | --- | --- |
+| id | Long (PK) | auto increment |
+| start_time | Long | เวลาเริ่มรอบชาร์จ |
+| end_time | Long | เวลาสิ้นสุดรอบชาร์จ |
+| start_level | Int | % เริ่มต้น |
+| end_level | Int | % สิ้นสุด |
+| total_mah_added | Int | mAh ที่เพิ่มทั้งหมด |
+| max_current_ma | Int | กระแสสูงสุด |
+| avg_temperature_c | Float | อุณหภูมิเฉลี่ย |
+
+### app_usage
+
+| Column | Type | Description |
+| --- | --- | --- |
+| id | Long (PK) | auto increment |
+| timestamp | Long | เวลาที่บันทึก |
+| uid | Int | UID ของแอป |
+| app_name | String | ชื่อแพ็กเกจ |
+| wake_count | Int | จำนวนครั้งที่ปลุกเครื่อง |
+| foreground_time_ms | Long | เวลาที่แอปเปิดหน้าจอ |
+| background_time_ms | Long | เวลาที่แอปทำงานเบื้องหลัง |
+| estimated_drain_mah | Float | ค่ากระแสโดยประมาณที่ใช้ (จาก current_flow) |
+
+### wakelock_offenders (จาก JSON ในรอบชาร์จ)
+
+| Column | Type | Description |
+| --- | --- | --- |
+| id | Long (PK) | auto increment |
+| cycle_id | Long (FK) | อ้างอิง charge_cycles.id |
+| app_name | String | แพ็กเกจแอป |
+| wake_count | Int | จำนวน wakelock ในรอบนั้น |
+| estimated_drain_mah | Float | ค่ากระแสที่สูญเสียโดยประมาณ |
+
+> หมายเหตุ: ข้อมูลใน wakelock_offenders ถูกกรองโดย AI Governance เพื่อให้แสดงเฉพาะแอปที่น่าสงสัยเท่านั้น
+
+---
+
+## 🛠️ เทคโนโลยีที่ใช้
+
+- ภาษา: Kotlin, Java (สำหรับ Android), Go / C (สำหรับ native daemon)
+- ฐานข้อมูล: Room (SQLite), Realm (optional)
+- Background Task: WorkManager, AlarmManager
+- Machine Learning: TensorFlow Lite (LightGBM), ML Kit (LLM Inference)
+- Cloud (Optional): Firebase / Google Cloud (BigQuery, Vertex AI) สำหรับรวบรวมสถิติ anonymized
+- Build System: Gradle (Kotlin DSL)
+
+---
+
+## 📲 การติดตั้ง (สำหรับนักพัฒนาที่ต้องการ Build เอง)
+
+1. Clone repository:
+   ```bash
+   git clone https://github.com/yourname/AmpereEye.git
+   cd AmpereEye
+   ```
+2. เปิดโปรเจคด้วย Android Studio (Ladybug หรือใหม่กว่า)
+3. รัน build script สำหรับ native library:
+   ```bash
+   ./gradlew assembleDebug
+   ```
+4. ติดตั้ง APK ลงอุปกรณ์ (ต้องเปิด USB Debugging)
+
+ข้อกำหนด: Android 8.0 (API 26) ขึ้นไป และอุปกรณ์ต้องมี Fuel Gauge IC ที่รองรับการอ่านค่า CURRENT_NOW และ CHARGE_COUNTER (อุปกรณ์สมัยใหม่ส่วนใหญ่รองรับ)
+
+---
+
+## 🤝 การมีส่วนร่วม
+
+เรายินดีรับ Pull Request และ Issue จากชุมชน!
+หากคุณพบข้อบกพร่องหรือมีไอเดียใหม่ กรุณาเปิด Issue หรือส่ง PR มาที่ GitHub Repository
+
+---
+
+## 📄 ลิขสิทธิ์
+
+เผยแพร่ภายใต้สัญญาอนุญาต MIT ดูรายละเอียดเพิ่มเติมได้ที่ไฟล์ LICENSE
+
+---
+
+AmpereEye – รู้ทุกกระแสไฟจริง เพื่อแบตเตอรี่ที่ยืนยาว
