@@ -1,6 +1,5 @@
 #include <jni.h>
 #include <fstream>
-#include <string>
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_ampereeye_core_BatteryTruthPlugin_getRealCurrent(JNIEnv* env, jobject /* this */) {

@@ -1,21 +1,38 @@
 import React, { useEffect, useState } from 'react';
 import { Brain } from 'lucide-react';
-import BatteryTruth from '../services/BatteryBridge';
+import BatteryTruth, { isBatteryTruthSupported } from '../services/BatteryBridge';
 
 const Pulse: React.FC = () => {
   const [currentFlow, setCurrentFlow] = useState<number>(0);
 
   useEffect(() => {
-    const interval = setInterval(async () => {
+    if (!isBatteryTruthSupported()) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchCurrent = async () => {
       try {
         const { current_ma } = await BatteryTruth.getRealCurrentFlow();
-        setCurrentFlow(current_ma);
-      } catch (error) {
-        console.error('Governance Enforcer: ไม่สามารถเชื่อมต่อกับฮาร์ดแวร์ได้', error);
-      }
-    }, 1000);
 
-    return () => clearInterval(interval);
+        if (!cancelled) {
+          setCurrentFlow(current_ma);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('BatteryTruth plugin call failed:', error);
+        }
+      }
+    };
+
+    fetchCurrent();
+    const interval = setInterval(fetchCurrent, 1000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, []);
 
   const metrics = {
@@ -37,13 +54,10 @@ const Pulse: React.FC = () => {
 
   return (
     <div className="flex flex-col px-6">
-      {/* Hero Widget: Battery Ring */}
       <div className="flex flex-col items-center justify-center py-10 relative">
         <div className="relative flex items-center justify-center w-64 h-64 rounded-full border border-slate-800/50">
-          {/* Inner Ring Glow */}
           <div className="absolute inset-4 rounded-full border-2 border-primary/20"></div>
 
-          {/* Progress Ring (SVG) */}
           <svg className="absolute inset-0 w-full h-full -rotate-90">
             <circle
               cx="128"
@@ -54,7 +68,7 @@ const Pulse: React.FC = () => {
               strokeWidth="4"
               className="text-primary"
               strokeDasharray="754"
-              strokeDashoffset={754 * (1 - 0.75)} // Simulated 75% progress
+              strokeDashoffset={754 * (1 - 0.75)}
               strokeLinecap="round"
             />
           </svg>
@@ -65,14 +79,12 @@ const Pulse: React.FC = () => {
             <span className="text-primary/60 text-[10px] mt-2 font-mono uppercase tracking-widest">Stable</span>
           </div>
 
-          {/* Battery % Marker */}
           <div className="absolute -bottom-2 bg-background-dark px-3 py-1 border border-slate-800 rounded-full">
             <span className="text-xs font-mono font-bold text-slate-100">{metrics.percentage}% CAP</span>
           </div>
         </div>
       </div>
 
-      {/* Status Bar */}
       <div className="grid grid-cols-3 gap-1 bg-neutral-dark/40 border border-slate-800/50 rounded-xl p-4 mb-6">
         <div className="flex flex-col items-center border-r border-slate-800">
           <span className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">Remaining</span>
@@ -88,18 +100,14 @@ const Pulse: React.FC = () => {
         </div>
       </div>
 
-      {/* AI Insight Card */}
       <div className="bg-neutral-dark border border-slate-800 rounded-xl p-5 mb-8">
         <div className="flex items-center gap-2 mb-3">
           <Brain className="text-primary w-4 h-4" />
           <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">AI Analysis</span>
         </div>
-        <p className="text-slate-300 text-sm leading-relaxed font-light">
-          {getAIInsight()}
-        </p>
+        <p className="text-slate-300 text-sm leading-relaxed font-light">{getAIInsight()}</p>
       </div>
 
-      {/* Hardware Health */}
       <div className="space-y-4 mb-10">
         <div className="flex justify-between items-center px-2">
           <span className="text-xs text-slate-500 uppercase tracking-widest">Hardware Health</span>
