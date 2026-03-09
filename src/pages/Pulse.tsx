@@ -92,11 +92,11 @@ const Pulse: React.FC = () => {
         </div>
         <div className="flex flex-col items-center border-r border-slate-800">
           <span className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">Temp</span>
-          <span className="font-mono text-sm text-slate-200">{metrics.temp}</span>
+          <span className="font-mono text-sm text-slate-200">{metrics.tempC}°C</span>
         </div>
         <div className="flex flex-col items-center">
           <span className="text-[10px] text-slate-500 uppercase tracking-widest mb-1">Voltage</span>
-          <span className="font-mono text-sm text-slate-200">{metrics.voltage}</span>
+          <span className="font-mono text-sm text-slate-200">{metrics.voltageMv} mV</span>
         </div>
       </div>
 
